@@ -1,35 +1,86 @@
 import EventEmitter from "events";
-import fetch from "node-fetch";
+import WebSocket from "ws";
+import Status from "../utils/Status";
+import Events from "../utils/Events";
 
 import type { Client } from "../client/Client";
+import { AppsConnectionsOpenResponse, WebClient } from "@slack/web-api";
+import type { WebSocketMessage } from "../types/WebSocket";
 
-class WebSocketManager extends EventEmitter {
+export class WebSocketManager extends EventEmitter {
+  /** Client which uses the manager */
   client: Client;
-  status: string;
+
+  /** WebSocket connection */
+  websocket: WebSocket | undefined;
+
+  /** Status of the WebSocket connection */
+  status: Status;
 
   constructor(client: Client) {
     super();
     this.client = client;
-    this.status = "idle";
+    this.status = Status.Idle;
+    this.websocket = undefined;
   }
 
   debug(message: string): void {
     this.client.emit(Events.Debug, `[WebSocketManager] ${message}`);
   }
 
-  async connect() {
-    const res = await fetch(
-      "https://slack.com/api/apps.connections.open",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.client.token}`,
-        },
-      }
-    ).then((r) => r.json());
+  private sendMessage(id: string, payload = {}): Promise<void> {
+    let msg = { envelope_id: id, paylod: payload };
 
-    if (!res["ok"]) {
+    return new Promise((resolve, reject) => {
+      if (this.status === Status.Idle || this.websocket === undefined)
+        reject("Client is not connected");
+      if (this.status === Status.Reconnecting)
+        reject("Client is currently reconnecting");
+      this.websocket?.send(JSON.stringify(msg), (err) => {
+        if (err != undefined) {
+          this.debug(
+            `Could not send message to the WebSocket connection: ${err}`
+          );
+          return reject(err);
+        }
+        return resolve();
+      });
+    });
+  }
+
+  async handleMessage(data: string): Promise<void> {
+    this.debug("Recieved a message on the WebSocket: " + data);
+    try {
+      let event: WebSocketMessage = JSON.parse(data);
+    } catch (e: any) {
+      this.debug(`Unable to parse the WebSocket message: ${e.message}`);
+      return;
     }
+
+    // TODO: Handle other messages like disconnect/warnings/hello
+  }
+
+  async connect(): Promise<void> {
+    let socketWebClient = new WebClient(this.client.appToken);
+    let res: AppsConnectionsOpenResponse =
+      await socketWebClient.apps.connections.open();
+    if (!res?.ok) {
+      this.debug(`Not able to connect to the Slack Web API\n${res.error}`);
+      throw new Error(`Not able to connect to the Slack Web API\n${res.error}`);
+    }
+    let ws = new WebSocket(res.url as string);
+    this.websocket = ws;
+    ws.on("open", () => {
+      this.status = Status.Connected;
+      this.debug("Connected to Slack");
+    });
+
+    ws.on("message", (msg) => {
+      console.log(JSON.parse(msg.toString("utf-8")));
+    });
+
+    ws.on("close", (code, reason) => {
+      this.status = Status.Idle;
+    });
   }
 }
