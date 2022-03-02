@@ -1,7 +1,7 @@
 import EventEmitter from "events";
 import WebSocket from "ws";
 import Status from "../utils/Status";
-import Events from "../utils/Events";
+import { handle as eventsHandle } from "./events";
 
 import type { Client } from "../client/Client";
 import { AppsConnectionsOpenResponse, WebClient } from "@slack/web-api";
@@ -25,7 +25,7 @@ export class WebSocketManager extends EventEmitter {
   }
 
   debug(message: string): void {
-    this.client.emit(Events.Debug, `[WebSocketManager] ${message}`);
+    this.client.emit("debug", `[WebSocketManager] ${message}`);
   }
 
   private sendMessage(id: string, payload = {}): Promise<void> {
@@ -50,14 +50,26 @@ export class WebSocketManager extends EventEmitter {
 
   async handleMessage(data: string): Promise<void> {
     this.debug("Recieved a message on the WebSocket: " + data);
+    let msg: WebSocketMessage;
     try {
-      let event: WebSocketMessage = JSON.parse(data);
+      msg = JSON.parse(data);
     } catch (e: any) {
       this.debug(`Unable to parse the WebSocket message: ${e.message}`);
       return;
     }
 
-    // TODO: Handle other messages like disconnect/warnings/hello
+    if (msg.type === "hello") {
+      this.debug("Connected to Slack");
+      this.status = Status.Connected;
+      this.client.emit("ready");
+    }
+
+    // TODO: Handle other messages like disconnect/warnings
+
+    const ack = async (payload: Record<string, unknown> = {}): Promise<void> =>
+      await this.sendMessage(msg.envelope_id, payload);
+
+    if (msg.type === "events_api") eventsHandle(this.client, msg, ack);
   }
 
   async connect(): Promise<void> {
@@ -71,12 +83,13 @@ export class WebSocketManager extends EventEmitter {
     let ws = new WebSocket(res.url as string);
     this.websocket = ws;
     ws.on("open", () => {
-      this.status = Status.Connected;
-      this.debug("Connected to Slack");
+      //     this.status = Status.Connected;
+      this.debug("Connection established");
     });
 
-    ws.on("message", (msg) => {
-      console.log(JSON.parse(msg.toString("utf-8")));
+    ws.on("message", async (msg) => {
+      // console.log(JSON.parse(msg.toString("utf-8")));
+      await this.handleMessage(msg.toString("utf-8"));
     });
 
     ws.on("close", (code, reason) => {

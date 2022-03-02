@@ -9,9 +9,13 @@
   "private": false,
   "devDependencies": {
     "@types/node": "^17.0.21",
+    "@typescript-eslint/eslint-plugin": "^5.13.0",
+    "@typescript-eslint/parser": "^5.13.0",
+    "eslint": "^8.10.0",
     "typescript": "^4.5.5"
   },
   "dependencies": {
+    "@slack/types": "^2.4.0",
     "@slack/web-api": "^6.7.0",
     "@types/ws": "^8.5.1",
     "dotenv": "^16.0.0",

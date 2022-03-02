@@ -10,8 +10,14 @@ const client = new Client({
   appToken: appToken,
 });
 
-client.on("debug", (i) => console.log(i));
+//client.on("debug", (i) => console.log(i));
 
-const ws = new WebSocketManager(client);
-ws.connect();
+client.on("ready", () => {
+  console.log("Logged in!");
+});
 
+client.on("message", (msg) => {
+  console.log(msg);
+});
+
+client.login();
