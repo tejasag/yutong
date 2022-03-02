@@ -1,3 +1,5 @@
+// Code taken from https://github.com/slackapi/bolt-js
+
 import type { View, MessageAttachment, KnownBlock, Block } from "@slack/types";
 
 export type SlackEvent =
